@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>SRS</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            padding-top: 30px;
+        }
+    </style>
+    <link rel="stylesheet" type="text/css" href="css/bootstrap.min.css" />
+    <script type="text/javascript" src="js/jquery-1.10.2.min.js"></script>
+    <script type="text/javascript" src="js/adapter-7.4.0.min.js"></script>
+    <script type="text/javascript" src="js/srs.sdk.js"></script>
+    <script type="text/javascript" src="js/winlin.utility.js"></script>
+    <script type="text/javascript" src="js/srs.page.js"></script>
+</head>
+
+<body>
+    <img src='https://ossrs.net/gif/v1/sls.gif?site=ossrs.net&path=/player/rtcplayer' />
+    <div class="navbar navbar-fixed-top">
+        <div class="navbar-inner">
+            <div class="container">
+                <!-- <a id="srs_index" class="brand" href="https://github.com/ossrs/srs">SRS</a> -->
+                <div class="nav-collapse collapse">
+                    <ul class="nav">
+                        <!-- <li><a id="nav_srs_player" href="srs_player.html">SRS播放器</a></li> -->
+                        <li class="active"><a id="nav_rtc_player" href="rtc_player.html">SST播放器</a></li>
+                        <li><a id="nav_rtc_publisher" href="rtc_publisher.html">推流</a></li>
+                        <li><a id="nav_rtc_login" href="login.html">登录</a></li>
+                        <!-- <li><a id="nav_rtc_player" href="rtc_player_l2.html">播放器L2</a></li> -->
+                        <!-- <li><a  href="http://ossrs.net/srs.release/releases/app.html">iOS/Andriod</a></li> -->
+                        <!--<li><a id="nav_srs_publisher" href="srs_publisher.html">SRS编码器</a></li>-->
+                        <!--<li><a id="nav_srs_chat" href="srs_chat.html">SRS会议</a></li>-->
+                        <!--<li><a id="nav_srs_bwt" href="srs_bwt.html">SRS测网速</a></li>-->
+                        <!--<li><a id="nav_vlc" href="vlc.html">VLC播放器</a></li>-->
+                        <!--<li><a id="nav_gb28181" href="srs_gb28181.html">GB28181</a></li>-->
+                        <!-- <li>
+
+                        <a href="https://github.com/ossrs/srs">
+                            <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/ossrs/srs?style=social">
+                        </a>
+                    </li> -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="form-inline">
+            URL:
+            <input type="text" id="txt_url" class="input-xxlarge" value="">
+            <!-- <button class="btn btn-primary" id="btn_play">播放视频</button> -->
+            <button class="btn btn-primary" id="btn_sst_play">SST播放</button>
+        </div>
+
+        <div style="float:auto;width: 100%;">
+            <div style="float:right;width: 40%;">
+                <div style="height: 50%;">
+                    <h5 id="show_username"></h5>
+                    <h5 id="show_signal_ip"></h5>
+                    <h5 id="show_inner_ip"></h5>
+                    <h5 id="show_outer_ip"></h5>
+                    <label></label>
+                    SessionID: <span id='sessionid'></span>
+            
+                    <label></label>
+                    log_num: <span id='log_num'></span>
+            
+                    <label></label>
+                    Resolution: <span id='resolution'></span>
+            
+                    <label></label>
+                    Fps: <span id='fps'></span>
+
+                    <label></label>
+                    totalFrame: <span id='totalFrame'></span>
+            
+                    <label></label>
+                    recv_bw(Kbps): <span id='recv_bw'></span>
+            
+                    <label></label>
+                    sent_bw(Kbps): <span id='sent_bw'></span>
+                </div>
+                <div>
+                <textarea id="event_log" readonly="readonly" rows="17" style="width:95%;"></textarea>
+                </div>
+            </div>
+
+            <div style="float:left;width: 58%;">
+                <label></label>
+                <video id="rtc_media_player" width="100%" controls autoplay></video>
+            </div>
+        </div>
+
+        <!-- <label></label>
+    Simulator: <a href='#' id='simulator-drop'>Drop</a> -->
+
+        <!-- <footer>
+        <p></p>
+        <p><a href="https://github.com/ossrs/srs">SRS Team &copy; 2020</a></p>
+    </footer> -->
+    </div>
+    <script type="text/javascript">
+        $(function () {
+            var url = location.href;
+            // console.log("url:"+url)
+            var params = url.split("?");
+            console.log(params);
+            var username = params[1];
+            var inner_ip = params[2];
+            var outer_ip = params[3];
+            // console.log("username:"+username)
+            $("#show_username").html("用户名: "+ username);
+            $("#show_signal_ip").html("tracker地址: " + signal_addr);
+            $("#show_inner_ip").html("内网ip: " + inner_ip);
+            $("#show_outer_ip").html("外部ip: "+ outer_ip);
+
+            var sdk = null; // Global handler to do cleanup when replaying.
+            var last_waiting = -1;
+            var total_rebuffer_time = 0;
+            var init_ts = -1;
+            var chrome_stats = new Object();
+            var srs_report = new Object();
+            var report_num = 0;
+            // var start_reinject = 0;
+            // var reinject_index = -1;
+            var reinject_stream_ssrc = "";
+            var send_map = "";
+            var log_life = 100;
+            var getNowFormatDate = function() {
+                var date =  new Date();
+                var year = date.getFullYear();
+                var month = date.getMonth() + 1;
+                var day = date.getDate();
+                var hours = date.getHours();
+                var minutes = date.getMinutes();
+                var seconds = date.getSeconds();
+                var nowFormatDate = year + "-" + month + "-" + day + " " + hours + ":" + minutes + ":" + seconds;
+
+                //Let the scroll bar go to the lowest level
+                var textarea = document.getElementById("event_log");
+                textarea.scrollTop = textarea.scrollHeight;
+
+                return nowFormatDate;
+            }
+            var clear_eventLog = function () {
+                document.getElementById("event_log").innerHTML = "";
+            }
+
+            var show_stats = function (report) {
+                // console.log("show stats")
+                $('#log_num').html(String(report_num))
+                report.forEach(res => {
+                    if (res.kind === 'video' && res.type === 'track') {
+                        $('#resolution').html(String(res.frameWidth) + "*" + String(res.frameHeight));
+                        chrome_stats.resolution = String(res.frameWidth) + "*" + String(res.frameHeight);
+                    }
+                    if (res.kind === 'video' && res.type === 'inbound-rtp' && 'framesPerSecond' in res) {
+                        $('#fps').html(String(res.framesPerSecond));
+                        chrome_stats.fps = res.framesPerSecond;
+                    }
+                    // 总帧数
+                    if (res.kind === 'video' && res.type === 'inbound-rtp' && 'framesReceived' in res) {
+                        $('#totalFrame').html(String(res.framesReceived));
+                        chrome_stats.totalFrame = res.framesReceived;
+                    }
+                    if (res.type === 'transport') {
+                        let ts = res.timestamp;
+                        // recv
+                        let br = res.bytesReceived;
+                        let recv_bw = (br - bytes_recv_pre) / (ts - last_ts) * 8; // Kbps
+                        bytes_recv_pre = br;
+                        // send
+                        let bs = res.bytesSent;
+                        let sent_bw = (bs - bytes_sent_pre) / (ts - last_ts) * 8; // Kbps
+                        bytes_sent_pre = bs;
+                        last_ts = ts;
+                        $('#recv_bw').html(String(Math.floor(recv_bw/100*100)))
+                        $('#sent_bw').html(String(Math.floor(sent_bw/100*100)))
+                        chrome_stats.recv_bw = recv_bw;
+                        chrome_stats.sent_bw = sent_bw;
+                    }
+                })
+                // rebuffer
+                chrome_stats.rebuffer_ratio = 100 * total_rebuffer_time / (new Date().getTime() - init_ts);
+            }
+            var startSSTPlay = function () {
+                $('#rtc_media_player').show();
+
+                // Close PC when user replay.
+                if (sdk) {
+                    sdk.close();
+                }
+                sdk = new SrsRtcPlayerAsync();
+
+                // https://webrtc.org/getting-started/remote-streams
+                $('#rtc_media_player').prop('srcObject', sdk.stream);
+                // Optional callback, SDK will add track to stream.
+                // sdk.ontrack = function (event) { console.log('Got track', event); sdk.stream.addTrack(event.track); };
+
+                // For example: webrtc://r.ossrs.net/live/livestream
+                var url = $("#txt_url").val();
+
+                sdk.sstPlay(url, username).then(function (session) {
+                    var st = sdk.stream
+                    var pc = sdk.pc
+                    init_ts = new Date().getTime();
+                    setInterval(() => {
+                        pc.getStats(null).then(show_stats, err => console.log(err))
+                    }, 3000)
+                    setInterval(() => {
+                        requestSRSMonitor(sdk)
+                    }, 3000)
+                    setInterval(() => {
+                        logsUpload()
+                    }, 3000)
+                    //clear event log every 1 minutes
+                    setInterval(() => {
+                        clear_eventLog()
+                    }, 1000*60)
+                    //show log
+                    var content = document.getElementById("event_log")
+                    content.innerHTML += "["+getNowFormatDate()+"] start sst play.\n"
+
+                    // rebuffer 
+                    st.getVideoTracks().forEach(videoTrack => {
+                        videoTrack.onmute = () => {
+                            last_waiting = new Date().getTime();
+                            let rebuffer_info = '[' + new Date().getTime() + ']BUPT waiting';
+                            console.log(rebuffer_info);
+                        };
+                    });
+                    st.getVideoTracks().forEach(videoTrack => {
+                        videoTrack.onunmute = () => {
+                            let rebuffer_info = '[' + new Date().getTime() + ']BUPT play';
+                            console.log(rebuffer_info);
+                            if (last_waiting > 0) {
+                                total_rebuffer_time += new Date().getTime() - last_waiting;
+                            }
+                        };
+                    });
+
+                    $('#sessionid').html(sdk.session_id);
+                    $('#simulator-drop').attr('href', session.simulator + '?drop=1&username=' + session.sessionid);
+                }).catch(function (reason) {
+                    sdk.close();
+                    $('#rtc_media_player').hide();
+                    console.error(reason);
+                });
+            };
+
+            var requestSRSMonitor = function (sdk) {
+                var data = {
+                    session_id: sdk.session_id,
+                    stream_url: "/live/livestream",
+                    // start_reinject: start_reinject,
+                    // reinject_index: reinject_index,
+                    reinject_stream_ssrc: reinject_stream_ssrc,
+                    send_map: send_map,
+                };
+                var content = document.getElementById("event_log");
+                var srs_response = http_post(data, "http://localhost:1985/rtc/v1/monitor/")
+                srs_response.then(function (report) {
+                    srs_report = report;
+                    content.innerHTML += "["+getNowFormatDate()+"] get SRS report.\n";
+                }).catch(function (reason) {
+                    console.log("get srs report fail", reason);
+                    content.innerHTML +=  "["+getNowFormatDate()+"] get SRS report fail.\n";
+                })
+                if (reinject_stream_ssrc != "")
+                {
+                    reinject_stream_ssrc = "";
+                    send_map = "";
+                }
+                // if (start_reinject != 0)
+                // {
+                //     start_reinject = 0;
+                //     reinject_index = -1;
+                // }
+            };
+
+            var switchUpstream = function(sdk, switch_params) {
+                var data = {
+                    session_id: sdk.session_id,
+                    old_ip: switch_params.switch_old_ip,
+                    new_ip: switch_params.switch_new_ip,
+                    snum: switch_params.switch_snum,
+                };
+                var content = document.getElementById("event_log");
+                var srs_response = http_post(data, "http://localhost:1985/rtc/v1/switch/")
+                srs_response.then(function (report) {
+                    console.log("refresh upstream");
+                    content.innerHTML +=  "["+getNowFormatDate()+"] refresh upstream:"+data.old_ip+"->"+data.new_ip+"\n";
+                }).catch(function (reason) {
+                    console.log("refresh upstream fail", reason);
+                    content.innerHTML += "["+getNowFormatDate()+"] refresh upstream fail.\n";
+                })
+            }
+
+            var logsUpload = function () {
+                report_num += 1
+                if (report_num == 1 || log_life <= 0) {
+                    return
+                }
+                var upload_logs = new Object()
+                upload_logs.num = report_num
+                upload_logs.init_ts = init_ts
+                upload_logs.username = username
+                upload_logs.chrome_stats = chrome_stats
+                upload_logs.srs_report = srs_report
+                console.log(upload_logs)
+                var content = document.getElementById("event_log");
+                var logs_response = http_post(upload_logs, "http://" + signal_addr + "/logs")
+                logs_response.then(function (res) {
+                    // 检查log_life来防止前端停止播放后依然不断请求信令服务器发送log
+                    if (res.hasOwnProperty('reduce_life')) {
+                        log_life -= 1;
+                    }
+                    else {
+                        log_life = 100;
+                    }
+                    if (res.hasOwnProperty('reinject_stream_ssrc') && res.hasOwnProperty('send_map'))
+                    {
+                        // start_reinject = res.start_reinject;
+                        // reinject_index = res.reinject_index;
+                        reinject_stream_ssrc = res.reinject_stream_ssrc;
+                        send_map = res.send_map;
+                    }
+                    if (res.hasOwnProperty('switch'))
+                    {
+                        var switch_params = new Object();
+                        switch_params.switch_snum = res.switch_snum;
+                        switch_params.switch_old_ip = res.switch_old_ip;
+                        switch_params.switch_new_ip = res.switch_new_ip;
+                        switchUpstream(sdk, switch_params);
+                    }
+                    console.log("logs", res);
+                    content.innerHTML += "["+getNowFormatDate()+"] upload log:"+"{num:"+upload_logs.num+",init_ts:"+upload_logs.init_ts+
+                        ",chrome_stats:"+"[fps:"+chrome_stats.fps+",rebuffer_ratio:"+chrome_stats.rebuffer_ratio+"],recv_bw:"+chrome_stats.recv_bw+
+                        ",sent_bw:"+chrome_stats.sent_bw+"],srs_report:["+srs_report+"]}\n";
+
+                }).catch(function (reason) {
+                    console.log("logs failed.", reason);
+                    content.innerHTML += "["+getNowFormatDate()+"] logs failed.\n";
+                })
+            };
+
+            var startPlay = function () {
+                $('#rtc_media_player').show();
+
+                // Close PC when user replay.
+                if (sdk) {
+                    sdk.close();
+                }
+                sdk = new SrsRtcPlayerAsync();
+
+                // https://webrtc.org/getting-started/remote-streams
+                $('#rtc_media_player').prop('srcObject', sdk.stream);
+                // Optional callback, SDK will add track to stream.
+                // sdk.ontrack = function (event) { console.log('Got track', event); sdk.stream.addTrack(event.track); };
+
+                // For example: webrtc://r.ossrs.net/live/livestream
+                var url = $("#txt_url").val();
+                var publishers = $("#txt_publishers").val();
+                var sdegree = $("#txt_sdegree").val();
+
+                sdk.play(url, publishers, sdegree).then(function (session) {
+                    $('#sessionid').html(session.sessionid);
+                    $('#simulator-drop').attr('href', session.simulator + '?drop=1&username=' + session.sessionid);
+                }).catch(function (reason) {
+                    sdk.close();
+                    $('#rtc_media_player').hide();
+                    console.error(reason);
+                });
+            };
+
+
+            $('#rtc_media_player').hide();
+            var query = parse_query_string();
+            srs_init_rtc("#txt_url", query);
+
+            $("#btn_sst_play").click(function () {
+                $('#rtc_media_player').prop('muted', false);
+                startSSTPlay();
+            });
+            $("#btn_signal").click(function () {
+                getUpStream();
+            });
+            $("#btn_play").click(function () {
+                $('#rtc_media_player').prop('muted', false);
+                startPlay();
+            });
+
+            if (query.autostart === 'true') {
+                $('#rtc_media_player').prop('muted', true);
+                console.warn('For autostart, we should mute it, see https://www.jianshu.com/p/c3c6944eed5a ' +
+                    'or https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#audiovideo_elements');
+
+                startSSTPlay();
+            }
+            if (query.autostart === 'true') {
+                $('#rtc_media_player').prop('muted', true);
+                console.warn('For autostart, we should mute it, see https://www.jianshu.com/p/c3c6944eed5a ' +
+                    'or https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#audiovideo_elements');
+
+                startPlay();
+            }
+        });
+    </script>
+</body>
+
+</html>
